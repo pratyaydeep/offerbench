@@ -1,7 +1,10 @@
+import logging
 from dataclasses import dataclass
 
 from offerbench import config, currency, db, llm_client
 from offerbench.models import ExtractedOffer
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -24,8 +27,11 @@ def classify_status(result: ExtractedOffer) -> str:
 def extract_pending(force: bool = False, limit: int | None = None) -> ExtractResult:
     posts = db.posts_needing_extraction(config.EXTRACTION_VERSION, force=force, limit=limit)
     counts = {"ok": 0, "low_confidence": 0, "no_data": 0, "errors": 0}
+    total = len(posts)
+    logger.info("extract: %d post(s) to process (model=%s)", total, config.LLM_MODEL)
 
-    for post in posts:
+    for i, post in enumerate(posts, start=1):
+        logger.info("[%d/%d] topic_id=%s %r", i, total, post["topic_id"], post["title"][:60])
         try:
             result = llm_client.extract_offer(post["title"], post["content"])
             status = classify_status(result)
@@ -41,6 +47,10 @@ def extract_pending(force: bool = False, limit: int | None = None) -> ExtractRes
                 payload=payload,
             )
             counts[status] += 1
+            logger.info(
+                "  -> %s org=%r role=%r ctc_lakhs=%s",
+                status, result.organization, result.role_title, inr_lakhs,
+            )
         except Exception as e:
             db.insert_extraction(
                 post["topic_id"],
@@ -51,6 +61,7 @@ def extract_pending(force: bool = False, limit: int | None = None) -> ExtractRes
                 error=str(e),
             )
             counts["errors"] += 1
+            logger.info("  -> error: %s", e)
 
     return ExtractResult(
         processed=len(posts),

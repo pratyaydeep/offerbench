@@ -9,6 +9,7 @@ dependencies = [
     "pydantic>=2.7",
     "click>=8.1",
     "flask>=3.0",
+    "python-dotenv>=1.0",
 ]
 
 [project.scripts]

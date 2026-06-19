@@ -1,19 +1,26 @@
+import logging
+
 import click
 
 from offerbench import db, extract, ingest
 
 
 @click.group()
-def cli():
-    pass
+@click.option("-q", "--quiet", is_flag=True, help="Suppress per-item progress logs")
+def cli(quiet):
+    logging.basicConfig(
+        level=logging.WARNING if quiet else logging.INFO,
+        format="%(message)s",
+    )
 
 
 @cli.command()
 @click.option("--page-size", default=50, show_default=True)
 @click.option("--delay", default=1.0, show_default=True, help="Seconds between requests")
-def sync(page_size, delay):
+@click.option("--limit", default=None, type=int, help="Cap the number of new posts fetched (for testing)")
+def sync(page_size, delay, limit):
     """Fetch new posts (and any missing detail content). Backfills automatically on an empty DB."""
-    result = ingest.sync_new_posts(page_size=page_size, request_delay_s=delay)
+    result = ingest.sync_new_posts(page_size=page_size, request_delay_s=delay, limit=limit)
     click.echo(f"New posts: {result.new_posts}, detail fetched: {result.detail_fetched}")
 
 

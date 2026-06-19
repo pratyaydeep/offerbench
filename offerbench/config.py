@@ -1,7 +1,11 @@
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(REPO_ROOT / ".env")
+
 DB_PATH = Path(os.environ.get("OFFERBENCH_DB_PATH") or (REPO_ROOT / "offerbench.db"))
 
 LEETCODE_GRAPHQL_URL = "https://leetcode.com/graphql/"
