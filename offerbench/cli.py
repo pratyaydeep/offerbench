@@ -1,0 +1,56 @@
+import click
+
+from offerbench import db, extract, ingest
+
+
+@click.group()
+def cli():
+    pass
+
+
+@cli.command()
+@click.option("--page-size", default=50, show_default=True)
+@click.option("--delay", default=1.0, show_default=True, help="Seconds between requests")
+def sync(page_size, delay):
+    """Fetch new posts (and any missing detail content). Backfills automatically on an empty DB."""
+    result = ingest.sync_new_posts(page_size=page_size, request_delay_s=delay)
+    click.echo(f"New posts: {result.new_posts}, detail fetched: {result.detail_fetched}")
+
+
+@cli.command(name="extract")
+@click.option("--force", is_flag=True, help="Re-extract posts already extracted at the current version")
+@click.option("--limit", default=None, type=int, help="Cap the number of posts processed")
+def extract_cmd(force, limit):
+    """Run LLM extraction on posts pending extraction."""
+    result = extract.extract_pending(force=force, limit=limit)
+    click.echo(
+        f"Processed: {result.processed} | ok: {result.ok} | "
+        f"low_confidence: {result.low_confidence} | no_data: {result.no_data} | "
+        f"errors: {result.errors}"
+    )
+
+
+@cli.command()
+def status():
+    """Show pipeline counts."""
+    counts = db.status_counts()
+    click.echo(f"Raw posts: {counts['raw_posts']}")
+    click.echo(f"Missing detail content: {counts['missing_detail']}")
+    click.echo(f"Extracted (current version): {counts['extracted_total']}")
+    for k, v in counts["by_status"].items():
+        click.echo(f"  {k}: {v}")
+
+
+@cli.command()
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=5000, show_default=True)
+@click.option("--debug", is_flag=True)
+def serve(host, port, debug):
+    """Run the local web dashboard."""
+    from offerbench.web.app import create_app
+
+    create_app().run(host=host, port=port, debug=debug)
+
+
+if __name__ == "__main__":
+    cli()

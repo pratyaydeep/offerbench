@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block content %}
+
+<form id="filters"
+      hx-get="/offers/rows"
+      hx-target="#offer-rows"
+      hx-trigger="submit, change delay:300ms"
+      hx-push-url="true">
+  <input type="text" name="role" placeholder="Role (e.g. SDE2)" value="{{ filters.role or '' }}">
+  <input type="text" name="organization" placeholder="Organization" value="{{ filters.organization or '' }}">
+  <input type="text" name="location" placeholder="Location" value="{{ filters.location or '' }}">
+
+  <select name="post_kind">
+    <option value="">Any post kind</option>
+    {% for kind in ["accepted_offer", "current_comp", "question", "comparison", "other"] %}
+      <option value="{{ kind }}" {% if filters.post_kind == kind %}selected{% endif %}>{{ kind }}</option>
+    {% endfor %}
+  </select>
+
+  <select name="currency">
+    <option value="">Any currency</option>
+    <option value="INR" {% if filters.currency == "INR" %}selected{% endif %}>INR</option>
+    <option value="USD" {% if filters.currency == "USD" %}selected{% endif %}>USD</option>
+  </select>
+
+  <input type="number" name="min_ctc_lakhs" placeholder="Min CTC (INR lakhs)" value="{{ filters.min_ctc_lakhs or '' }}">
+  <input type="number" name="max_ctc_lakhs" placeholder="Max CTC (INR lakhs)" value="{{ filters.max_ctc_lakhs or '' }}">
+
+  <select name="sort">
+    <option value="posted_at_desc" {% if filters.sort == "posted_at_desc" %}selected{% endif %}>Newest first</option>
+    <option value="ctc_desc" {% if filters.sort == "ctc_desc" %}selected{% endif %}>CTC: high to low</option>
+    <option value="ctc_asc" {% if filters.sort == "ctc_asc" %}selected{% endif %}>CTC: low to high</option>
+  </select>
+
+  <label><input type="checkbox" name="include_no_data" {% if filters.include_no_data %}checked{% endif %}> include rows with no extracted data</label>
+
+  <button type="submit">Filter</button>
+</form>
+
+<table>
+  <thead>
+    <tr>
+      <th>Posted</th>
+      <th>Organization</th>
+      <th>Role</th>
+      <th>Level</th>
+      <th>YOE</th>
+      <th>Location</th>
+      <th>Total CTC</th>
+      <th>Kind</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody id="offer-rows">
+    {% include "_offer_rows.html" %}
+  </tbody>
+</table>
+{% endblock %}

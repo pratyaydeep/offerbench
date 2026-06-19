@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block content %}
+{% if not post %}
+  <p>No such post.</p>
+{% else %}
+  <p><a href="/">&larr; back</a></p>
+  <h2>{{ post['title'] }}</h2>
+  <p>
+    <a href="https://leetcode.com/discuss/post/{{ post['topic_id'] }}/{{ post['slug'] }}/" target="_blank">
+      view original post on LeetCode
+    </a>
+  </p>
+
+  {% if offer %}
+  <h3>Extracted</h3>
+  <table class="kv">
+    <tr><th>Organization</th><td>{{ offer['organization'] or '—' }}</td></tr>
+    <tr><th>Role</th><td>{{ offer['role_title'] or '—' }}</td></tr>
+    <tr><th>Level</th><td>{{ offer['level_grade'] or '—' }}</td></tr>
+    <tr><th>YOE</th><td>{{ offer['years_experience'] if offer['years_experience'] is not none else '—' }}</td></tr>
+    <tr><th>Location</th><td>{{ offer['location'] or '—' }}</td></tr>
+    <tr><th>Post kind</th><td>{{ offer['post_kind'] or '—' }}</td></tr>
+    <tr><th>Currency (raw)</th><td>{{ offer['currency_raw'] or '—' }}</td></tr>
+    <tr><th>Total CTC (raw)</th><td>{{ offer['total_ctc_raw'] if offer['total_ctc_raw'] is not none else '—' }}</td></tr>
+    <tr><th>Total CTC (INR lakhs)</th><td>{{ "%.1f"|format(offer['total_ctc_inr_lakhs']) if offer['total_ctc_inr_lakhs'] is not none else '—' }}</td></tr>
+    <tr><th>Total CTC (USD)</th><td>{{ "%.0f"|format(offer['total_ctc_usd']) if offer['total_ctc_usd'] is not none else '—' }}</td></tr>
+    <tr><th>Fixed base</th><td>{{ offer['fixed_base_raw'] if offer['fixed_base_raw'] is not none else '—' }}</td></tr>
+    <tr><th>Variable/bonus</th><td>{{ offer['variable_bonus_raw'] if offer['variable_bonus_raw'] is not none else '—' }}</td></tr>
+    <tr><th>Stock/RSU</th><td>{{ offer['stock_rsu_raw'] if offer['stock_rsu_raw'] is not none else '—' }}</td></tr>
+    <tr><th>Confidence</th><td>{{ offer['confidence'] }}</td></tr>
+    <tr><th>Status</th><td>{{ offer['extraction_status'] }}</td></tr>
+    <tr><th>Model</th><td>{{ offer['extraction_model'] }}</td></tr>
+  </table>
+  {% else %}
+  <p><em>Not yet extracted.</em></p>
+  {% endif %}
+
+  <h3>Raw post content</h3>
+  <pre class="raw-content">{{ post['content'] }}</pre>
+{% endif %}
+{% endblock %}

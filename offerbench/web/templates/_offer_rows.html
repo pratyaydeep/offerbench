@@ -1,0 +1,22 @@
+{% for o in offers %}
+<tr class="status-{{ o['extraction_status'] }}">
+  <td>{{ o['posted_at'][:10] if o['posted_at'] else '' }}</td>
+  <td>{{ o['organization'] or '—' }}</td>
+  <td>{{ o['role_title'] or '—' }}</td>
+  <td>{{ o['level_grade'] or '—' }}</td>
+  <td>{{ o['years_experience'] if o['years_experience'] is not none else '—' }}</td>
+  <td>{{ o['location'] or '—' }}</td>
+  <td>
+    {% if o['total_ctc_inr_lakhs'] is not none %}
+      {{ "%.1f"|format(o['total_ctc_inr_lakhs']) }}L
+    {% else %}
+      —
+    {% endif %}
+  </td>
+  <td>{{ o['post_kind'] or '—' }}</td>
+  <td>{{ o['extraction_status'] }}</td>
+  <td><a href="/offers/{{ o['topic_id'] }}">detail</a></td>
+</tr>
+{% else %}
+<tr><td colspan="10">No offers match these filters.</td></tr>
+{% endfor %}
