@@ -3,6 +3,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from offerbench import llm_client
+from offerbench.config import Provider
+from offerbench.models import ExtractionResult
+
+_PROVIDER = Provider(label="test", base_url="https://example.test/v1", api_key="key", model="test-model")
 
 
 class _FakeStreamCtx:
@@ -19,9 +23,10 @@ class _FakeStreamCtx:
         return False
 
 
-def _patch_stream(monkeypatch, lines):
+def _patch_stream(monkeypatch, lines_by_call):
+    """lines_by_call: list of line-lists, one per successive stream() call."""
     fake_client = MagicMock()
-    fake_client.stream.return_value = _FakeStreamCtx(lines)
+    fake_client.stream.side_effect = [_FakeStreamCtx(lines) for lines in lines_by_call]
     monkeypatch.setattr(llm_client, "_get_http_client", lambda: fake_client)
 
 
@@ -31,8 +36,8 @@ def test_stream_content_reassembles_deltas(monkeypatch):
         'data: {"id":"x","choices":[{"index":0,"delta":{"content":"1}"}}]}',
         "data: [DONE]",
     ]
-    _patch_stream(monkeypatch, lines)
-    result = llm_client._stream_content([{"role": "user", "content": "hi"}])
+    _patch_stream(monkeypatch, [lines])
+    result = llm_client._stream_content(_PROVIDER, [{"role": "user", "content": "hi"}])
     assert result == '{"a":1}'
 
 
@@ -44,9 +49,9 @@ def test_stream_content_raises_on_embedded_error(monkeypatch):
         'data: {"id":"x","choices":[{"index":0,"delta":{"content":""},"finish_reason":"error"}]}',
         "data: [DONE]",
     ]
-    _patch_stream(monkeypatch, lines)
+    _patch_stream(monkeypatch, [lines])
     with pytest.raises(RuntimeError, match="Network connection lost"):
-        llm_client._stream_content([{"role": "user", "content": "hi"}])
+        llm_client._stream_content(_PROVIDER, [{"role": "user", "content": "hi"}])
 
 
 def test_stream_content_raises_on_finish_reason_error(monkeypatch):
@@ -54,6 +59,47 @@ def test_stream_content_raises_on_finish_reason_error(monkeypatch):
         'data: {"id":"x","choices":[{"index":0,"delta":{"content":""},"finish_reason":"error"}]}',
         "data: [DONE]",
     ]
-    _patch_stream(monkeypatch, lines)
+    _patch_stream(monkeypatch, [lines])
     with pytest.raises(RuntimeError, match="finish_reason=error"):
-        llm_client._stream_content([{"role": "user", "content": "hi"}])
+        llm_client._stream_content(_PROVIDER, [{"role": "user", "content": "hi"}])
+
+
+def test_extract_offer_fails_over_to_next_provider(monkeypatch):
+    providers = [
+        Provider(label="bad", base_url="https://bad.test/v1", api_key="k", model="bad-model"),
+        Provider(label="good", base_url="https://good.test/v1", api_key="k", model="good-model"),
+    ]
+    good_payload = '{"post_kind":"other","years_experience":null,"location":null,"offers":[]}'
+
+    call_log = []
+
+    def fake_try_provider(provider, title, content):
+        call_log.append(provider.label)
+        if provider.label == "bad":
+            raise RuntimeError("simulated failure")
+        return ExtractionResult.model_validate_json(good_payload)
+
+    monkeypatch.setattr(llm_client, "_try_provider", fake_try_provider)
+
+    result, used = llm_client.extract_offer(
+        "title", "content", providers, max_rounds=2, cooldown_s=0, pace_s=0
+    )
+    assert used.label == "good"
+    assert result.offers == []
+    assert call_log == ["bad", "good"]
+
+
+def test_extract_offer_gives_up_after_max_rounds(monkeypatch):
+    providers = [Provider(label="always-bad", base_url="https://bad.test/v1", api_key="k", model="m")]
+    call_log = []
+
+    def fake_try_provider(provider, title, content):
+        call_log.append(provider.label)
+        raise RuntimeError("simulated failure")
+
+    monkeypatch.setattr(llm_client, "_try_provider", fake_try_provider)
+
+    with pytest.raises(RuntimeError, match="All providers failed after 2 round"):
+        llm_client.extract_offer("title", "content", providers, max_rounds=2, cooldown_s=0, pace_s=0)
+
+    assert call_log == ["always-bad", "always-bad"]

@@ -1,0 +1,14 @@
+[
+  {
+    "label": "openrouter-nemotron-nano",
+    "base_url": "https://openrouter.ai/api/v1",
+    "api_key": "sk-or-v1-...",
+    "model": "nvidia/nemotron-3-nano-30b-a3b:free"
+  },
+  {
+    "label": "nvidia-build-minimax-m3",
+    "base_url": "https://integrate.api.nvidia.com/v1",
+    "api_key": "nvapi-...",
+    "model": "minimaxai/minimax-m3"
+  }
+]

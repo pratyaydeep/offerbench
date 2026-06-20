@@ -1,10 +1,14 @@
 import json
+import logging
 import re
+import time
 
 import httpx
 
-from offerbench import config
+from offerbench.config import Provider
 from offerbench.models import ExtractionResult
+
+logger = logging.getLogger(__name__)
 
 _JSON_SCHEMA_EXAMPLE = """{
   "post_kind": "comparison",
@@ -118,21 +122,21 @@ def _extract_json_object(raw: str) -> str:
     return raw
 
 
-def _stream_content(messages: list[dict]) -> str:
+def _stream_content(provider: Provider, messages: list[dict]) -> str:
     """Streams the completion via a raw SSE POST rather than the openai
     SDK's typed chunk model, because some providers (observed on both
     NVIDIA build and OpenRouter) inject a mid-stream {"error": {...}} event
-    under HTTP 200 when the upstream provider drops the connection. The
-    SDK's ChatCompletionChunk schema doesn't represent that field, so
-    relying on it silently swallows the real error as "no content"."""
+    under HTTP 200 when the upstream provider drops the connection. Parsing
+    raw lets us catch that and raise it with the real message, instead of
+    it silently looking like an empty response."""
     client = _get_http_client()
-    payload = {"model": config.LLM_MODEL, "messages": messages, "stream": True}
+    payload = {"model": provider.model, "messages": messages, "stream": True}
     parts: list[str] = []
     with client.stream(
         "POST",
-        f"{config.LLM_BASE_URL}/chat/completions",
+        f"{provider.base_url}/chat/completions",
         headers={
-            "Authorization": f"Bearer {config.LLM_API_KEY}",
+            "Authorization": f"Bearer {provider.api_key}",
             "Content-Type": "application/json",
         },
         json=payload,
@@ -162,40 +166,78 @@ def _stream_content(messages: list[dict]) -> str:
     return "".join(parts)
 
 
-def extract_offer(title: str, content: str) -> ExtractionResult:
+def _try_provider(provider: Provider, title: str, content: str) -> ExtractionResult:
+    """One provider, up to 2 attempts: an initial call, plus one retry where
+    the model is asked to correct its own malformed JSON. Any transient
+    error (connection/timeout/mid-stream provider error/empty response)
+    raises immediately -- that's the caller's signal to move to the next
+    provider, not something worth retrying on the same one."""
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Title: {title}\n\nContent:\n{content}"},
     ]
 
-    last_error: Exception | None = None
-    for attempt in range(3):
-        try:
-            raw = _stream_content(messages)
-        except Exception as e:
-            # transient provider-side errors -- retry the same messages,
-            # no need to correct anything
-            last_error = e
-            continue
+    raw = _stream_content(provider, messages)
+    if not raw:
+        raise RuntimeError("Model returned an empty response")
 
+    json_str = _extract_json_object(raw)
+    try:
+        return ExtractionResult.model_validate_json(json_str)
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.info("    [%s] invalid JSON, asking model to correct: %s", provider.label, e)
+        messages.append({"role": "assistant", "content": raw})
+        messages.append(
+            {
+                "role": "user",
+                "content": (
+                    f"That was not valid JSON matching the schema ({e}). "
+                    "Respond with ONLY the corrected JSON object, nothing else."
+                ),
+            }
+        )
+        raw = _stream_content(provider, messages)
         if not raw:
-            last_error = RuntimeError("Model returned an empty response")
-            continue
+            raise RuntimeError("Model returned an empty response on correction retry")
+        return ExtractionResult.model_validate_json(_extract_json_object(raw))
 
-        json_str = _extract_json_object(raw)
-        try:
-            return ExtractionResult.model_validate_json(json_str)
-        except (json.JSONDecodeError, ValueError) as e:
-            last_error = e
-            messages.append({"role": "assistant", "content": raw})
-            messages.append(
-                {
-                    "role": "user",
-                    "content": (
-                        f"That was not valid JSON matching the schema ({e}). "
-                        "Respond with ONLY the corrected JSON object, nothing else."
-                    ),
-                }
+
+def extract_offer(
+    title: str,
+    content: str,
+    providers: list[Provider],
+    max_rounds: int = 5,
+    cooldown_s: float = 60.0,
+    pace_s: float = 1.0,
+) -> tuple[ExtractionResult, Provider]:
+    """Tries each provider in order; on failure, paces `pace_s` seconds and
+    moves to the next. If every provider in the list fails (one full
+    "round"), waits `cooldown_s` before starting the list over again, up to
+    `max_rounds` total rounds before giving up entirely. Returns the result
+    together with whichever provider actually produced it."""
+    if not providers:
+        raise RuntimeError("No LLM providers configured")
+
+    last_error: Exception | None = None
+    for round_num in range(1, max_rounds + 1):
+        for provider in providers:
+            try:
+                result = _try_provider(provider, title, content)
+                logger.info("  [%s] ok", provider.label)
+                time.sleep(pace_s)  # pace every call, success or failure
+                return result, provider
+            except Exception as e:
+                last_error = e
+                logger.info("  [%s] failed: %s", provider.label, e)
+            time.sleep(pace_s)
+
+        if round_num < max_rounds:
+            logger.info(
+                "  round %d/%d: all %d provider(s) failed, cooling down %.0fs",
+                round_num, max_rounds, len(providers), cooldown_s,
             )
+            time.sleep(cooldown_s)
 
-    raise RuntimeError(f"Model did not return valid JSON after retries: {last_error}")
+    raise RuntimeError(
+        f"All providers failed after {max_rounds} round(s): {last_error}"
+    )

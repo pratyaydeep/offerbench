@@ -36,12 +36,15 @@ def sync(page_size, delay, limit, batch_size, batch_delay):
 @cli.command(name="extract")
 @click.option("--force", is_flag=True, help="Re-extract posts already extracted at the current version")
 @click.option("--limit", default=None, type=int, help="Cap the number of posts processed")
-@click.option("--batch-size", default=10, show_default=True, help="LLM calls per batch")
-@click.option("--batch-delay", default=5.0, show_default=True, help="Seconds to pause between batches")
-def extract_cmd(force, limit, batch_size, batch_delay):
-    """Run LLM extraction on posts pending extraction."""
+@click.option("--pace", default=1.0, show_default=True, help="Seconds between consecutive LLM calls")
+@click.option("--max-rounds", default=5, show_default=True, help="Full passes through the provider list before giving up on a post")
+@click.option("--cooldown", default=60.0, show_default=True, help="Seconds to wait after every provider fails once, before retrying the list")
+def extract_cmd(force, limit, pace, max_rounds, cooldown):
+    """Run LLM extraction on posts pending extraction. Tries each provider in
+    llm_providers.json in turn; if all fail, cools down and retries the list,
+    up to --max-rounds times before giving up on that post."""
     result = extract.extract_pending(
-        force=force, limit=limit, batch_size=batch_size, batch_delay_s=batch_delay
+        force=force, limit=limit, max_rounds=max_rounds, cooldown_s=cooldown, pace_s=pace
     )
     click.echo(
         f"Processed: {result.processed} | ok: {result.ok} | "

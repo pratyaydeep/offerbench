@@ -1,5 +1,6 @@
 from offerbench import db, extract, llm_client
 from offerbench.models import ExtractionResult, OfferEntry
+from tests.conftest import FAKE_PROVIDER
 
 
 def _seed_post(topic_id="1", content="Company: Teradata\nCTC: 44.5 LPA"):
@@ -24,17 +25,20 @@ def _seed_post(topic_id="1", content="Company: Teradata\nCTC: 44.5 LPA"):
 def test_extract_pending_writes_normalized_row(monkeypatch):
     _seed_post()
 
-    def fake_extract(title, content):
-        return ExtractionResult(
-            offers=[
-                OfferEntry(
-                    organization="Teradata",
-                    role_title="SDE2",
-                    currency="INR",
-                    total_ctc=4_450_000,
-                    confidence=0.9,
-                )
-            ]
+    def fake_extract(title, content, providers, **kwargs):
+        return (
+            ExtractionResult(
+                offers=[
+                    OfferEntry(
+                        organization="Teradata",
+                        role_title="SDE2",
+                        currency="INR",
+                        total_ctc=4_450_000,
+                        confidence=0.9,
+                    )
+                ]
+            ),
+            FAKE_PROVIDER,
         )
 
     monkeypatch.setattr(llm_client, "extract_offer", fake_extract)
@@ -55,14 +59,17 @@ def test_extract_pending_writes_normalized_row(monkeypatch):
 def test_comparison_post_yields_one_row_per_offer(monkeypatch):
     _seed_post(content="Amazon vs Gojek, which should I pick?")
 
-    def fake_extract(title, content):
-        return ExtractionResult(
-            post_kind="comparison",
-            years_experience=2.0,
-            offers=[
-                OfferEntry(organization="Amazon", currency="INR", total_ctc=2_942_000, confidence=0.8),
-                OfferEntry(organization="Gojek", currency="INR", total_ctc=2_722_000, confidence=0.8),
-            ],
+    def fake_extract(title, content, providers, **kwargs):
+        return (
+            ExtractionResult(
+                post_kind="comparison",
+                years_experience=2.0,
+                offers=[
+                    OfferEntry(organization="Amazon", currency="INR", total_ctc=2_942_000, confidence=0.8),
+                    OfferEntry(organization="Gojek", currency="INR", total_ctc=2_722_000, confidence=0.8),
+                ],
+            ),
+            FAKE_PROVIDER,
         )
 
     monkeypatch.setattr(llm_client, "extract_offer", fake_extract)
@@ -84,9 +91,9 @@ def test_idempotent_without_force(monkeypatch):
     _seed_post()
     call_count = {"n": 0}
 
-    def fake_extract(title, content):
+    def fake_extract(title, content, providers, **kwargs):
         call_count["n"] += 1
-        return ExtractionResult(offers=[OfferEntry(organization="Teradata", confidence=0.9)])
+        return ExtractionResult(offers=[OfferEntry(organization="Teradata", confidence=0.9)]), FAKE_PROVIDER
 
     monkeypatch.setattr(llm_client, "extract_offer", fake_extract)
 
@@ -100,8 +107,8 @@ def test_idempotent_without_force(monkeypatch):
 def test_force_reextracts(monkeypatch):
     _seed_post()
 
-    def fake_extract(title, content):
-        return ExtractionResult(offers=[OfferEntry(organization="Teradata", confidence=0.9)])
+    def fake_extract(title, content, providers, **kwargs):
+        return ExtractionResult(offers=[OfferEntry(organization="Teradata", confidence=0.9)]), FAKE_PROVIDER
 
     monkeypatch.setattr(llm_client, "extract_offer", fake_extract)
 
@@ -114,9 +121,10 @@ def test_force_reextracts(monkeypatch):
 def test_low_confidence_classification(monkeypatch):
     _seed_post()
 
-    def fake_extract(title, content):
-        return ExtractionResult(
-            offers=[OfferEntry(organization="Teradata", total_ctc=100, confidence=0.2)]
+    def fake_extract(title, content, providers, **kwargs):
+        return (
+            ExtractionResult(offers=[OfferEntry(organization="Teradata", total_ctc=100, confidence=0.2)]),
+            FAKE_PROVIDER,
         )
 
     monkeypatch.setattr(llm_client, "extract_offer", fake_extract)
@@ -128,8 +136,8 @@ def test_low_confidence_classification(monkeypatch):
 def test_no_data_classification(monkeypatch):
     _seed_post()
 
-    def fake_extract(title, content):
-        return ExtractionResult(offers=[])
+    def fake_extract(title, content, providers, **kwargs):
+        return ExtractionResult(offers=[]), FAKE_PROVIDER
 
     monkeypatch.setattr(llm_client, "extract_offer", fake_extract)
 
@@ -140,7 +148,7 @@ def test_no_data_classification(monkeypatch):
 def test_error_status_on_exception(monkeypatch):
     _seed_post()
 
-    def fake_extract(title, content):
+    def fake_extract(title, content, providers, **kwargs):
         raise RuntimeError("provider timeout")
 
     monkeypatch.setattr(llm_client, "extract_offer", fake_extract)

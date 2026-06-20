@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 
-from offerbench import batching, config, currency, db, llm_client
+from offerbench import config, currency, db, llm_client
 from offerbench.models import OfferEntry
 
 logger = logging.getLogger(__name__)
@@ -27,35 +27,48 @@ def classify_offer_status(offer: OfferEntry) -> str:
 def extract_pending(
     force: bool = False,
     limit: int | None = None,
-    batch_size: int = 10,
-    batch_delay_s: float = 5.0,
+    max_rounds: int = 5,
+    cooldown_s: float = 60.0,
+    pace_s: float = 1.0,
 ) -> ExtractResult:
-    """LLM calls are one-post-per-call with no natural grouping, so this is
-    explicitly batched the same way as the LeetCode detail fetch in
-    ingest.py: `batch_size` calls run back-to-back, then `batch_delay_s`
-    seconds pass before the next batch.
+    """Processes pending posts one at a time. Each LLM call tries providers
+    from llm_providers.json (or the single LLM_BASE_URL/LLM_API_KEY/
+    LLM_MODEL env vars as a fallback) in order, paced `pace_s` seconds apart;
+    if every provider fails, waits `cooldown_s` and retries the whole list,
+    up to `max_rounds` rounds before giving up on that post and recording it
+    as an error.
 
     A single post can describe multiple distinct offers (comparison posts
     like "Amazon vs Gojek"), so each extraction can produce 0..N rows in
     extracted_offers, one per offer_index -- not exactly one row per post."""
+    providers = config.load_llm_providers()
+    if not providers:
+        raise RuntimeError(
+            "No LLM providers configured -- set up llm_providers.json or "
+            "LLM_BASE_URL/LLM_API_KEY/LLM_MODEL in .env"
+        )
+
     posts = db.posts_needing_extraction(config.EXTRACTION_VERSION, force=force, limit=limit)
     counts = {"ok": 0, "low_confidence": 0, "no_data": 0, "errors": 0}
     total = len(posts)
     logger.info(
-        "extract: %d post(s) to process (model=%s) in batches of %d",
-        total, config.LLM_MODEL, batch_size,
+        "extract: %d post(s) to process across %d provider(s): %s",
+        total, len(providers), ", ".join(p.label for p in providers),
     )
 
-    def process_one(post) -> None:
-        logger.info("topic_id=%s %r", post["topic_id"], post["title"][:60])
+    for i, post in enumerate(posts, start=1):
+        logger.info("[%d/%d] topic_id=%s %r", i, total, post["topic_id"], post["title"][:60])
         try:
-            result = llm_client.extract_offer(post["title"], post["content"])
+            result, provider = llm_client.extract_offer(
+                post["title"], post["content"], providers,
+                max_rounds=max_rounds, cooldown_s=cooldown_s, pace_s=pace_s,
+            )
 
             if not result.offers:
                 db.insert_extraction(
                     post["topic_id"],
                     config.EXTRACTION_VERSION,
-                    config.LLM_MODEL,
+                    provider.model,
                     status="no_data",
                     payload={
                         "post_kind": result.post_kind,
@@ -66,9 +79,9 @@ def extract_pending(
                 )
                 counts["no_data"] += 1
                 logger.info("  -> no_data (no offers found)")
-                return
+                continue
 
-            for i, offer in enumerate(result.offers):
+            for offer_index, offer in enumerate(result.offers):
                 status = classify_offer_status(offer)
                 payload = offer.model_dump()
                 payload["post_kind"] = result.post_kind
@@ -80,30 +93,28 @@ def extract_pending(
                 db.insert_extraction(
                     post["topic_id"],
                     config.EXTRACTION_VERSION,
-                    config.LLM_MODEL,
+                    provider.model,
                     status=status,
                     payload=payload,
-                    offer_index=i,
+                    offer_index=offer_index,
                 )
                 counts[status] += 1
                 logger.info(
                     "  -> [%d] %s org=%r role=%r ctc_lakhs=%s",
-                    i, status, offer.organization, offer.role_title, inr_lakhs,
+                    offer_index, status, offer.organization, offer.role_title, inr_lakhs,
                 )
         except Exception as e:
             db.insert_extraction(
                 post["topic_id"],
                 config.EXTRACTION_VERSION,
-                config.LLM_MODEL,
+                providers[0].model,
                 status="error",
                 payload=None,
                 error=str(e),
                 offer_index=0,
             )
             counts["errors"] += 1
-            logger.info("  -> error: %s", e)
-
-    batching.process_in_batches(posts, process_one, batch_size, batch_delay_s, label="post")
+            logger.info("  -> error (gave up after %d round(s)): %s", max_rounds, e)
 
     return ExtractResult(
         processed=total,

@@ -1,4 +1,6 @@
+import json
 import os
+from dataclasses import dataclass
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -15,7 +17,37 @@ LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "")
 LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_MODEL = os.environ.get("LLM_MODEL", "")
 
+LLM_PROVIDERS_PATH = REPO_ROOT / "llm_providers.json"
+
 EXTRACTION_VERSION = 1
 
 # Fixed, manually-refreshed conversion constant (no live FX API; see findings.md / plan open questions)
 USD_TO_INR = 83.0
+
+
+@dataclass(frozen=True)
+class Provider:
+    label: str
+    base_url: str
+    api_key: str
+    model: str
+
+
+def load_llm_providers() -> list[Provider]:
+    """Loads the provider failover list from llm_providers.json if present;
+    otherwise falls back to a single provider built from LLM_BASE_URL/
+    LLM_API_KEY/LLM_MODEL for backward compatibility."""
+    if LLM_PROVIDERS_PATH.exists():
+        entries = json.loads(LLM_PROVIDERS_PATH.read_text())
+        return [
+            Provider(
+                label=e.get("label", e["model"]),
+                base_url=e["base_url"],
+                api_key=e["api_key"],
+                model=e["model"],
+            )
+            for e in entries
+        ]
+    if LLM_BASE_URL and LLM_API_KEY and LLM_MODEL:
+        return [Provider(label=LLM_MODEL, base_url=LLM_BASE_URL, api_key=LLM_API_KEY, model=LLM_MODEL)]
+    return []
