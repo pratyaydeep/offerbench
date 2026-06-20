@@ -11,9 +11,11 @@
     </a>
   </p>
 
-  {% if offer %}
-  <h3>Extracted</h3>
+  {% if offers %}
+  <h3>Extracted ({{ offers|length }} offer{{ 's' if offers|length != 1 else '' }})</h3>
+  {% for offer in offers %}
   <table class="kv">
+    <tr><th colspan="2">Offer {{ loop.index }}</th></tr>
     <tr><th>Organization</th><td>{{ offer['organization'] or '—' }}</td></tr>
     <tr><th>Role</th><td>{{ offer['role_title'] or '—' }}</td></tr>
     <tr><th>Level</th><td>{{ offer['level_grade'] or '—' }}</td></tr>
@@ -31,6 +33,7 @@
     <tr><th>Status</th><td>{{ offer['extraction_status'] }}</td></tr>
     <tr><th>Model</th><td>{{ offer['extraction_model'] }}</td></tr>
   </table>
+  {% endfor %}
   {% else %}
   <p><em>Not yet extracted.</em></p>
   {% endif %}

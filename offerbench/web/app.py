@@ -38,8 +38,8 @@ def create_app() -> Flask:
 
     @app.route("/offers/<topic_id>")
     def offer_detail(topic_id):
-        post, offer = db.get_offer_detail(topic_id)
-        return render_template("offer_detail.html", post=post, offer=offer)
+        post, offers = db.get_offer_detail(topic_id)
+        return render_template("offer_detail.html", post=post, offers=offers)
 
     return app
 

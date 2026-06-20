@@ -15,21 +15,34 @@ def cli(quiet):
 
 
 @cli.command()
-@click.option("--page-size", default=50, show_default=True)
-@click.option("--delay", default=1.0, show_default=True, help="Seconds between requests")
+@click.option("--page-size", default=50, show_default=True, help="Posts per list page")
+@click.option("--delay", default=1.0, show_default=True, help="Seconds between list pages")
 @click.option("--limit", default=None, type=int, help="Cap the number of new posts fetched (for testing)")
-def sync(page_size, delay, limit):
-    """Fetch new posts (and any missing detail content). Backfills automatically on an empty DB."""
-    result = ingest.sync_new_posts(page_size=page_size, request_delay_s=delay, limit=limit)
+@click.option("--batch-size", default=10, show_default=True, help="Detail fetches per batch")
+@click.option("--batch-delay", default=5.0, show_default=True, help="Seconds to pause between detail-fetch batches")
+def sync(page_size, delay, limit, batch_size, batch_delay):
+    """Fetch new posts (and any missing detail content). Walks the full list
+    every run, filling in any historical gaps, not just the newest posts."""
+    result = ingest.sync_new_posts(
+        page_size=page_size,
+        request_delay_s=delay,
+        limit=limit,
+        batch_size=batch_size,
+        batch_delay_s=batch_delay,
+    )
     click.echo(f"New posts: {result.new_posts}, detail fetched: {result.detail_fetched}")
 
 
 @cli.command(name="extract")
 @click.option("--force", is_flag=True, help="Re-extract posts already extracted at the current version")
 @click.option("--limit", default=None, type=int, help="Cap the number of posts processed")
-def extract_cmd(force, limit):
+@click.option("--batch-size", default=10, show_default=True, help="LLM calls per batch")
+@click.option("--batch-delay", default=5.0, show_default=True, help="Seconds to pause between batches")
+def extract_cmd(force, limit, batch_size, batch_delay):
     """Run LLM extraction on posts pending extraction."""
-    result = extract.extract_pending(force=force, limit=limit)
+    result = extract.extract_pending(
+        force=force, limit=limit, batch_size=batch_size, batch_delay_s=batch_delay
+    )
     click.echo(
         f"Processed: {result.processed} | ok: {result.ok} | "
         f"low_confidence: {result.low_confidence} | no_data: {result.no_data} | "

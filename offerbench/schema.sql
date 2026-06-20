@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS raw_posts (
 CREATE TABLE IF NOT EXISTS extracted_offers (
     id                      INTEGER PRIMARY KEY AUTOINCREMENT,
     topic_id                TEXT NOT NULL REFERENCES raw_posts(topic_id),
+    offer_index             INTEGER NOT NULL DEFAULT 0,
     extraction_status       TEXT NOT NULL,
     extraction_model        TEXT NOT NULL,
     extraction_version      INTEGER NOT NULL,
@@ -51,7 +52,7 @@ CREATE TABLE IF NOT EXISTS extracted_offers (
     tags_json               TEXT,
     extraction_raw_json     TEXT NOT NULL,
 
-    UNIQUE(topic_id, extraction_version)
+    UNIQUE(topic_id, extraction_version, offer_index)
 );
 
 CREATE INDEX IF NOT EXISTS idx_offers_topic  ON extracted_offers(topic_id);

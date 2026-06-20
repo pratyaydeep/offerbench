@@ -12,10 +12,23 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _migrate_if_needed(conn: sqlite3.Connection) -> None:
+    """One-off migration: older schema versions had extracted_offers without
+    offer_index (and a UNIQUE(topic_id, extraction_version) constraint that
+    would block multi-offer rows even if the column were just added). If
+    detected, drop and let the schema script below recreate it fresh."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(extracted_offers)").fetchall()}
+    if cols and "offer_index" not in cols:
+        conn.execute("DROP VIEW IF EXISTS current_offers")
+        conn.execute("DROP TABLE IF EXISTS extracted_offers")
+        conn.commit()
+
+
 @contextmanager
 def connect():
     conn = sqlite3.connect(config.DB_PATH)
     conn.row_factory = sqlite3.Row
+    _migrate_if_needed(conn)
     conn.executescript(_SCHEMA_SQL)
     try:
         yield conn
@@ -109,6 +122,7 @@ def insert_extraction(
     status: str,
     payload: dict | None,
     error: str | None = None,
+    offer_index: int = 0,
 ) -> None:
     payload = payload or {}
     with connect() as conn:
@@ -124,15 +138,15 @@ def insert_extraction(
         conn.execute(
             """
             INSERT INTO extracted_offers (
-                topic_id, extraction_status, extraction_model, extraction_version,
+                topic_id, offer_index, extraction_status, extraction_model, extraction_version,
                 extracted_at, confidence, error_message,
                 organization, role_title, level_grade, years_experience, location, post_kind,
                 currency_raw, total_ctc_raw, fixed_base_raw, variable_bonus_raw,
                 stock_rsu_raw, signing_bonus_raw, retirement_benefits_raw,
                 total_ctc_inr_lakhs, total_ctc_usd,
                 source_url, posted_at, tags_json, extraction_raw_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(topic_id, extraction_version) DO UPDATE SET
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(topic_id, extraction_version, offer_index) DO UPDATE SET
                 extraction_status=excluded.extraction_status,
                 extraction_model=excluded.extraction_model,
                 extracted_at=excluded.extracted_at,
@@ -160,6 +174,7 @@ def insert_extraction(
             """,
             (
                 str(topic_id),
+                offer_index,
                 status,
                 model,
                 version,
@@ -256,7 +271,8 @@ def get_offer_detail(topic_id: str):
         post = conn.execute(
             "SELECT * FROM raw_posts WHERE topic_id = ?", (str(topic_id),)
         ).fetchone()
-        offer = conn.execute(
-            "SELECT * FROM current_offers WHERE topic_id = ?", (str(topic_id),)
-        ).fetchone()
-        return post, offer
+        offers = conn.execute(
+            "SELECT * FROM current_offers WHERE topic_id = ? ORDER BY offer_index",
+            (str(topic_id),),
+        ).fetchall()
+        return post, offers

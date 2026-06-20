@@ -1,13 +1,13 @@
 from offerbench import db, extract, llm_client
-from offerbench.models import ExtractedOffer
+from offerbench.models import ExtractionResult, OfferEntry
 
 
-def _seed_post(topic_id="1"):
+def _seed_post(topic_id="1", content="Company: Teradata\nCTC: 44.5 LPA"):
     db.upsert_raw_post_list_fields(
         {
             "topicId": topic_id,
-            "uuid": "u1",
-            "slug": "slug-1",
+            "uuid": f"u{topic_id}",
+            "slug": f"slug-{topic_id}",
             "title": "Teradata offer",
             "summary": "summary",
             "author": {"userName": "u", "realName": "U"},
@@ -18,19 +18,23 @@ def _seed_post(topic_id="1"):
             "tags": [],
         }
     )
-    db.update_raw_post_detail(topic_id, {"content": "Company: Teradata\nCTC: 44.5 LPA"})
+    db.update_raw_post_detail(topic_id, {"content": content})
 
 
 def test_extract_pending_writes_normalized_row(monkeypatch):
     _seed_post()
 
     def fake_extract(title, content):
-        return ExtractedOffer(
-            organization="Teradata",
-            role_title="SDE2",
-            currency="INR",
-            total_ctc=4_450_000,
-            confidence=0.9,
+        return ExtractionResult(
+            offers=[
+                OfferEntry(
+                    organization="Teradata",
+                    role_title="SDE2",
+                    currency="INR",
+                    total_ctc=4_450_000,
+                    confidence=0.9,
+                )
+            ]
         )
 
     monkeypatch.setattr(llm_client, "extract_offer", fake_extract)
@@ -48,13 +52,41 @@ def test_extract_pending_writes_normalized_row(monkeypatch):
     assert row["source_url"] == "https://leetcode.com/discuss/post/1/slug-1/"
 
 
+def test_comparison_post_yields_one_row_per_offer(monkeypatch):
+    _seed_post(content="Amazon vs Gojek, which should I pick?")
+
+    def fake_extract(title, content):
+        return ExtractionResult(
+            post_kind="comparison",
+            years_experience=2.0,
+            offers=[
+                OfferEntry(organization="Amazon", currency="INR", total_ctc=2_942_000, confidence=0.8),
+                OfferEntry(organization="Gojek", currency="INR", total_ctc=2_722_000, confidence=0.8),
+            ],
+        )
+
+    monkeypatch.setattr(llm_client, "extract_offer", fake_extract)
+
+    result = extract.extract_pending()
+    assert result.processed == 1  # one post...
+    assert result.ok == 2  # ...but two offer rows
+
+    offers = db.query_current_offers({"include_no_data": True, "sort": "ctc_desc"})
+    assert len(offers) == 2
+    orgs = {o["organization"] for o in offers}
+    assert orgs == {"Amazon", "Gojek"}
+    for o in offers:
+        assert o["post_kind"] == "comparison"
+        assert o["years_experience"] == 2.0
+
+
 def test_idempotent_without_force(monkeypatch):
     _seed_post()
     call_count = {"n": 0}
 
     def fake_extract(title, content):
         call_count["n"] += 1
-        return ExtractedOffer(organization="Teradata", confidence=0.9)
+        return ExtractionResult(offers=[OfferEntry(organization="Teradata", confidence=0.9)])
 
     monkeypatch.setattr(llm_client, "extract_offer", fake_extract)
 
@@ -69,7 +101,7 @@ def test_force_reextracts(monkeypatch):
     _seed_post()
 
     def fake_extract(title, content):
-        return ExtractedOffer(organization="Teradata", confidence=0.9)
+        return ExtractionResult(offers=[OfferEntry(organization="Teradata", confidence=0.9)])
 
     monkeypatch.setattr(llm_client, "extract_offer", fake_extract)
 
@@ -83,7 +115,9 @@ def test_low_confidence_classification(monkeypatch):
     _seed_post()
 
     def fake_extract(title, content):
-        return ExtractedOffer(organization="Teradata", total_ctc=100, confidence=0.2)
+        return ExtractionResult(
+            offers=[OfferEntry(organization="Teradata", total_ctc=100, confidence=0.2)]
+        )
 
     monkeypatch.setattr(llm_client, "extract_offer", fake_extract)
 
@@ -95,7 +129,7 @@ def test_no_data_classification(monkeypatch):
     _seed_post()
 
     def fake_extract(title, content):
-        return ExtractedOffer(confidence=0.9)
+        return ExtractionResult(offers=[])
 
     monkeypatch.setattr(llm_client, "extract_offer", fake_extract)
 
