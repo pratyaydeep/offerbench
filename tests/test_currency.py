@@ -1,20 +1,20 @@
 from offerbench.currency import normalize_compensation
 
 
-def test_inr_converts_to_lakhs_and_usd():
-    lakhs, usd = normalize_compensation("INR", 4_450_000)
+def test_inr_is_already_lakhs_passthrough():
+    lakhs, usd = normalize_compensation("INR", 44.5)
     assert lakhs == 44.5
-    assert round(usd, 2) == round(4_450_000 / 83.0, 2)
+    assert round(usd, 2) == round(44.5 * 100_000 / 94.0, 2)
 
 
 def test_usd_converts_to_lakhs_and_passthrough():
     lakhs, usd = normalize_compensation("USD", 100_000)
     assert usd == 100_000
-    assert round(lakhs, 2) == round(100_000 * 83.0 / 100_000, 2)
+    assert round(lakhs, 2) == round(100_000 * 94.0 / 100_000, 2)
 
 
 def test_missing_currency_defaults_to_inr():
-    lakhs, usd = normalize_compensation(None, 1_000_000)
+    lakhs, usd = normalize_compensation(None, 10.0)
     assert lakhs == 10.0
 
 

@@ -20,11 +20,11 @@ _JSON_SCHEMA_EXAMPLE = """{
       "role_title": "SDE 1",
       "level_grade": null,
       "currency": "INR",
-      "total_ctc": 2942000,
-      "fixed_base": 1917000,
+      "total_ctc": 29.42,
+      "fixed_base": 19.17,
       "variable_bonus": null,
-      "stock_rsu": 1500000,
-      "signing_bonus": 1150000,
+      "stock_rsu": 15.0,
+      "signing_bonus": 11.5,
       "retirement_benefits": null,
       "confidence": 0.85,
       "notes": null
@@ -34,11 +34,11 @@ _JSON_SCHEMA_EXAMPLE = """{
       "role_title": "Associate Software Engineer",
       "level_grade": null,
       "currency": "INR",
-      "total_ctc": 2722279,
-      "fixed_base": 2222279,
-      "variable_bonus": 200000,
+      "total_ctc": 27.22,
+      "fixed_base": 22.22,
+      "variable_bonus": 2.0,
       "stock_rsu": null,
-      "signing_bonus": 300000,
+      "signing_bonus": 3.0,
       "retirement_benefits": null,
       "confidence": 0.85,
       "notes": null
@@ -76,12 +76,33 @@ that isn't grounded in the text. If a field is absent, use null.
 - If multiple numbers could plausibly fill total_ctc for the same offer \
 (e.g. ambiguous "CTC" vs "in-hand"), prefer the figure most clearly labeled \
 as total annual compensation, and note the ambiguity in `notes`.
-- Report all monetary fields (total_ctc, fixed_base, variable_bonus, \
-stock_rsu, signing_bonus, retirement_benefits) as plain absolute numbers in \
-the stated currency's base unit (e.g. plain rupees, plain dollars) — \
-convert shorthand like "44.5 LPA" or "12L" or "1.2 Cr" into the absolute \
-number yourself (44.5 LPA -> 4450000). Do not report figures still in \
-lakhs/crore/k shorthand.
+- If currency is INR, report all monetary fields (total_ctc, fixed_base, \
+variable_bonus, stock_rsu, signing_bonus, retirement_benefits) as a number \
+of LAKHS (1 lakh = 100,000 rupees) — matching how these posts are usually \
+already written. "44.5 LPA" -> 44.5, "12L" -> 12, "1.2 Cr" -> 120, an \
+absolute figure like "22,22,279" -> 22.22. If currency is USD, report \
+monetary fields as plain absolute dollars (no lakhs conversion — lakhs is \
+an INR-only concept). Approximate is fine; getting the right order of \
+magnitude and roughly the right value matters more than precision.
+- Stock/RSU figures are the most common source of unit mistakes — they're \
+often phrased awkwardly ("15 lakh vested over 4 years", "$15k RSU/yr"). \
+Convert to the SAME unit and SAME total-grant basis as the other fields \
+(lakhs for INR, dollars for USD): "15 lakh vested over 4 years" -> \
+stock_rsu: 15.0 (total grant value in lakhs — do not divide by the vesting \
+period unless the post is explicitly asking for an annualized figure). \
+Double-check stock_rsu is the same order of magnitude as fixed_base for \
+that same offer; if a post says base is "20L" and stock is "15L", both \
+should be reported as ~15-20, not one of them off by 100x or 1000x.
+- Stock/RSU is frequently denominated in a DIFFERENT currency than the rest \
+of the offer -- common for Indian roles at US-headquartered companies, \
+where base/bonus are in INR (LPA) but stock is quoted in USD (e.g. "fixed: \
+21 LPA ... stocks: 12k USD vested over 4 years"). When this happens, \
+convert the stock figure into the SAME unit as the offer's overall \
+`currency` using 1 USD ≈ 94 INR, so stock_rsu stays consistent with \
+fixed_base/total_ctc -- never leave it in its original currency's raw \
+number if that differs from the offer's `currency` field. Example: offer \
+currency is INR, stock is "12k USD" -> 12000 * 94 / 100000 ≈ 11.3 lakhs, so \
+stock_rsu: 11.3 (not 12 and not 12000).
 - Set `currency` to your best read of the currency: "INR" or "USD". Assume \
 INR if rupee symbols, "LPA", or lakhs/crore shorthand are used without an \
 explicit denomination — this is the overwhelmingly common case on this \

@@ -33,7 +33,7 @@ def test_extract_pending_writes_normalized_row(monkeypatch):
                         organization="Teradata",
                         role_title="SDE2",
                         currency="INR",
-                        total_ctc=4_450_000,
+                        total_ctc=44.5,
                         confidence=0.9,
                     )
                 ]
@@ -65,8 +65,8 @@ def test_comparison_post_yields_one_row_per_offer(monkeypatch):
                 post_kind="comparison",
                 years_experience=2.0,
                 offers=[
-                    OfferEntry(organization="Amazon", currency="INR", total_ctc=2_942_000, confidence=0.8),
-                    OfferEntry(organization="Gojek", currency="INR", total_ctc=2_722_000, confidence=0.8),
+                    OfferEntry(organization="Amazon", currency="INR", total_ctc=29.42, confidence=0.8),
+                    OfferEntry(organization="Gojek", currency="INR", total_ctc=27.22, confidence=0.8),
                 ],
             ),
             FAKE_PROVIDER,

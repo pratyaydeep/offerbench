@@ -19,10 +19,10 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "")
 
 LLM_PROVIDERS_PATH = REPO_ROOT / "llm_providers.json"
 
-EXTRACTION_VERSION = 1
+EXTRACTION_VERSION = 2  # v2: monetary fields are now lakhs-native for INR, not absolute rupees
 
-# Fixed, manually-refreshed conversion constant (no live FX API; see findings.md / plan open questions)
-USD_TO_INR = 83.0
+# Fixed, approximate conversion constant (no live FX API; exact precision isn't the goal here)
+USD_TO_INR = 94.0
 
 
 @dataclass(frozen=True)
